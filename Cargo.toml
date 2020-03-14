@@ -1,0 +1,17 @@
+[workspace]
+
+members = [
+  "api",
+  "server"
+]
+
+[profile.dev]
+opt-level = 0
+debug = true
+debug-assertions = true
+
+[profile.release]
+opt-level = "s"
+lto = true
+debug = false
+debug-assertions = false

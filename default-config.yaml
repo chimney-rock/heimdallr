@@ -1,0 +1,9 @@
+database:
+  name: heimdallr
+  host: 127.0.0.1
+  port: 5432
+  username: heimdallr
+  password: super_kawaii
+
+grpc_listener:
+  address: 127.0.0.1:9001

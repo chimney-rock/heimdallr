@@ -1,0 +1,56 @@
+syntax = "proto3";
+package heimdallr.auth;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+
+message LoginRequest {
+
+  // Required
+  string client_id = 1;
+
+  // Optional
+  string client_secret = 2;
+
+  // Required
+  GrantType grant_type = 3;
+
+  // One or more registered scopes. If omitted, a token for all explicitly allowed scopes will be issued.
+  repeated string scope = 4;
+
+  // Required for the `authorization_code` grant type.
+  string redirect_uri = 5;
+
+  // Authorization code - Required for `authorization_code` grant type.
+  string code = 6;
+
+  // Resource owner username - Required for `password` grant type.
+  string username = 7;
+
+  // Resource owner password - Required for `password` grant type.
+  string password = 8;
+
+  // Refresh token - Required for `refresh_token` grant type.
+  string refresh_token = 9;
+}
+
+message LoginResponse {
+  string access_token                  = 1;
+  google.protobuf.Timestamp expires_in = 2;
+  google.protobuf.Struct data          = 20;
+}
+
+enum GrantType {
+  PASSWORD           = 0;
+  AUTHORIZATION_CODE = 1;
+  CLIENT_CREDENTIALS = 2;
+  REFRESH_TOKEN      = 3;
+}
+
+service Login {
+  rpc Ping(google.protobuf.Empty) returns (google.protobuf.StringValue);
+
+  rpc Login(LoginRequest) returns (LoginResponse);
+}
