@@ -15,6 +15,15 @@ pub enum JwtType {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct JwtClaims<'a> {
+  // Time after which the JWT expires
+  pub exp: i64,
+
+  // Time before which the JWT must not be accepted for processing
+  pub nbf: i64,
+
+  // Time at which the JWT was issued; can be used to determine age of the JWT
+  pub iat: i64,
+
   // Issuer of the JWT
   #[serde(skip_serializing_if = "Option::is_none")]
   pub iss: Option<Cow<'a, str>>,
@@ -30,18 +39,6 @@ pub struct JwtClaims<'a> {
   // Unique identifier; can be used to prevent the JWT from being replayed
   #[serde(skip_serializing_if = "Option::is_none")]
   pub jti: Option<Uuid>,
-
-  // Time after which the JWT expires
-  pub exp: i64,
-
-  // Time before which the JWT must not be accepted for processing
-  pub nbf: i64,
-
-  // Time at which the JWT was issued; can be used to determine age of the JWT
-  pub iat: i64,
-
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub nonce: Option<Cow<'a, str>>,
 
   #[serde(flatten)]
   pub extra: HashMap<Cow<'a, str>, serde_json::Value>
@@ -60,53 +57,71 @@ impl<'a> JwtClaims<'a> {
 
 #[derive(Debug, Default, Clone)]
 pub struct JwtClaimsBuilder<'a> {
+  exp: Option<i64>,
+  nbf: Option<i64>,
+  iat: Option<i64>,
+  iss: Option<Cow<'a, str>>,
+  sub: Option<Cow<'a, str>>,
+  aud: Option<Cow<'a, str>>,
+  jti: Option<Uuid>,
+
+  extra: HashMap<Cow<'a, str>, serde_json::Value>,
+
+
+
+
+
   claims: JwtClaims<'a>
 }
 
 impl<'a> JwtClaimsBuilder<'a> {
   pub fn new() -> Self {
-    JwtClaimsBuilder { claims: JwtClaims::new() }
+    JwtClaimsBuilder { claims: JwtClaims::new(), ..Default::default() }
   }
 
   // Sets the ISS claim
   pub fn issuer<I: Into<Cow<'a, str>>>(mut self, value: I) -> Self {
-    self.claims.iss = Some(value.into());
+    self.iss = Some(value.into());
     self
   }
 
   // Sets the SUB claim
   pub fn subject<S: Into<Cow<'a, str>>>(mut self, value: S) -> Self {
-    self.claims.sub = Some(value.into());
+    self.sub = Some(value.into());
     self
   }
 
   // Sets the AUD claim
   pub fn audience<A: Into<Cow<'a, str>>>(mut self, value: A) -> Self {
-    self.claims.aud = Some(value.into());
+    self.aud = Some(value.into());
     self
   }
 
   // Sets the EXP claim
-  pub fn expires(mut self, expires: Duration) -> Self {
-    let exp = Utc::now() + expires;
-    self.claims.exp = exp.timestamp();
+  pub fn expires_in(mut self, expires: Duration) -> Self {
+    let exp  = Utc::now() + expires;
+    self.exp = Some(exp.timestamp());
     self
   }
 
   // Sets the NBF claim
   pub fn not_before(mut self, not_before: DateTime<Utc>) -> Self {
-    self.claims.nbf = not_before.timestamp();
+    self.nbf = Some(not_before.timestamp());
     self
   }
 
   // Adds an additional claim
   pub fn add_claim<K: Into<Cow<'a, str>>>(mut self, key: K, value: serde_json::Value) -> Self {
-    self.claims.extra.insert(key.into(), value);
+    self.extra.insert(key.into(), value);
     self
   }
 
   pub fn finish(self) -> Result<JwtClaims<'a>, HeimdallrError> {
-    Ok(self.claims)
+    Ok(JwtClaims {
+      exp: self.exp.ok_or_else(|| HeimdallrError::JwtError("Expiration must be initialized"))?,
+      nbf: self.nbf.or_else(|| Utc::now().timestamp()).as_ref(),
+      ..Default::default()
+    })
   }
 }
 
@@ -151,7 +166,7 @@ mod tests {
     let expected_exp = Utc::now() + Duration::seconds(42);
 
     let claims = JwtClaimsBuilder::default()
-      .expires(Duration::seconds(42))
+      .expires_in(Duration::seconds(42))
       .finish()?;
 
     assert_eq!(claims.exp, expected_exp.timestamp());
