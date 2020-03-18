@@ -1,17 +1,9 @@
-// use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::borrow::Cow;
-use uuid::Uuid;
 
 use crate::error::*;
-
-#[derive(Debug)]
-pub enum JwtType {
-  AccessToken,
-  RefreshToken
-}
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct JwtClaims<'a> {
@@ -26,22 +18,26 @@ pub struct JwtClaims<'a> {
 
   // Issuer of the JWT
   #[serde(skip_serializing_if = "Option::is_none")]
+  #[serde(borrow)]
   pub iss: Option<Cow<'a, str>>,
 
   // Subject of the JWT (the user)
   #[serde(skip_serializing_if = "Option::is_none")]
+  #[serde(borrow)]
   pub sub: Option<Cow<'a, str>>,
 
   // Recipient for which the JWT is intended
   #[serde(skip_serializing_if = "Option::is_none")]
+  #[serde(borrow)]
   pub aud: Option<Cow<'a, str>>,
 
   // Unique identifier; can be used to prevent the JWT from being replayed
   #[serde(skip_serializing_if = "Option::is_none")]
-  pub jti: Option<Uuid>,
+  #[serde(borrow)]
+  pub jti: Option<Cow<'a, str>>,
 
   #[serde(flatten)]
-  pub extra: HashMap<Cow<'a, str>, serde_json::Value>
+  pub extra: HashMap<&'a str, serde_json::Value>
 }
 
 impl<'a> JwtClaims<'a> {
@@ -49,13 +45,9 @@ impl<'a> JwtClaims<'a> {
   pub fn new() -> Self {
     Self { ..Default::default() }
   }
-
-  pub fn build() -> JwtClaimsBuilder<'a> {
-    JwtClaimsBuilder::new()
-  }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct JwtClaimsBuilder<'a> {
   exp: Option<i64>,
   nbf: Option<i64>,
@@ -63,63 +55,91 @@ pub struct JwtClaimsBuilder<'a> {
   iss: Option<Cow<'a, str>>,
   sub: Option<Cow<'a, str>>,
   aud: Option<Cow<'a, str>>,
-  jti: Option<Uuid>,
+  jti: Option<Cow<'a, str>>,
 
-  extra: HashMap<Cow<'a, str>, serde_json::Value>,
+  extra: HashMap<String, serde_json::Value>
+}
 
-
-
-
-
-  claims: JwtClaims<'a>
+impl<'a> Default for JwtClaimsBuilder<'a> {
+  fn default() -> Self {
+    JwtClaimsBuilder {
+      exp: Some(0),
+      nbf: None,
+      iat: None,
+      iss: None,
+      sub: None,
+      aud: None,
+      jti: None,
+      extra: HashMap::new()
+    }
+  }
 }
 
 impl<'a> JwtClaimsBuilder<'a> {
   pub fn new() -> Self {
-    JwtClaimsBuilder { claims: JwtClaims::new(), ..Default::default() }
+    JwtClaimsBuilder {..Default::default() }
   }
 
   // Sets the ISS claim
-  pub fn issuer<I: Into<Cow<'a, str>>>(mut self, value: I) -> Self {
+  pub fn issuer<I>(&mut self, value: I) -> &mut Self
+    where I: Into<Cow<'a, str>> {
     self.iss = Some(value.into());
     self
   }
 
   // Sets the SUB claim
-  pub fn subject<S: Into<Cow<'a, str>>>(mut self, value: S) -> Self {
+  pub fn subject<S>(&mut self, value: S) -> &mut Self
+    where S: Into<Cow<'a, str>> {
     self.sub = Some(value.into());
     self
   }
 
   // Sets the AUD claim
-  pub fn audience<A: Into<Cow<'a, str>>>(mut self, value: A) -> Self {
+  pub fn audience<A>(&mut self, value: A) -> &mut Self
+    where A: Into<Cow<'a, str>> {
     self.aud = Some(value.into());
     self
   }
 
-  // Sets the EXP claim
-  pub fn expires_in(mut self, expires: Duration) -> Self {
+  // Sets the EXP claim using a duration
+  pub fn expires_in(&mut self, expires: Duration) -> &mut Self {
     let exp  = Utc::now() + expires;
     self.exp = Some(exp.timestamp());
     self
   }
 
+  // Sets the EXP claim directly
+  pub fn expires<EXP: Into<i64>>(&mut self, expires: EXP) -> &mut Self {
+    self.exp = Some(expires.into());
+    self
+  }
+
   // Sets the NBF claim
-  pub fn not_before(mut self, not_before: DateTime<Utc>) -> Self {
-    self.nbf = Some(not_before.timestamp());
+  pub fn not_before<NBF: Into<i64>>(&mut self, not_before: NBF) -> &mut Self {
+    self.nbf = Some(not_before.into());
     self
   }
 
   // Adds an additional claim
-  pub fn add_claim<K: Into<Cow<'a, str>>>(mut self, key: K, value: serde_json::Value) -> Self {
-    self.extra.insert(key.into(), value);
+  pub fn add_claim<K: Into<Cow<'a, str>>>(&mut self, key: K, value: serde_json::Value) -> &mut Self {
+    self.extra.insert(key.into().to_string(), value);
     self
   }
 
-  pub fn finish(self) -> Result<JwtClaims<'a>, HeimdallrError> {
+  pub fn build(&self) -> Result<JwtClaims<'a>, HeimdallrError> {
+    // iss: None,
+    // sub: None,
+    // aud: None,
+    // jti: None,
+    // extra: HashMap::new()
     Ok(JwtClaims {
-      exp: self.exp.ok_or_else(|| HeimdallrError::JwtError("Expiration must be initialized"))?,
-      nbf: self.nbf.or_else(|| Utc::now().timestamp()).as_ref(),
+      exp: match self.exp {
+        Some(value) => value,
+        None        => return Err(HeimdallrError::JwtError("Expiration must be initialized"))
+      },
+      nbf: self.nbf.unwrap_or_else(|| Utc::now().timestamp()),
+      iat: self.iat.unwrap_or_else(|| Utc::now().timestamp()),
+      // iss: self.iss.as_ref(),
       ..Default::default()
     })
   }
@@ -167,7 +187,7 @@ mod tests {
 
     let claims = JwtClaimsBuilder::default()
       .expires_in(Duration::seconds(42))
-      .finish()?;
+      .build()?;
 
     assert_eq!(claims.exp, expected_exp.timestamp());
     Ok(())
@@ -175,13 +195,13 @@ mod tests {
 
   #[test]
   fn test_builder_not_before() -> Result<(), HeimdallrError> {
-    let expected_nbf = Utc::now();
+    let expected_nbf = Utc::now().timestamp();
 
     let claims = JwtClaimsBuilder::default()
       .not_before(expected_nbf)
-      .finish()?;
+      .build()?;
 
-    assert_eq!(claims.nbf, expected_nbf.timestamp());
+    assert_eq!(claims.nbf, expected_nbf);
     Ok(())
   }
 }
